@@ -1,7 +1,28 @@
 import json
+import urllib
 import torch
 import os
 from integrate_ai_sdk.base_class import IaiBaseDataset
+import smart_open
+
+
+def _smart_open_transport_params(filepath):
+    sr = urllib.parse.urlsplit(filepath, scheme="")
+    out = None
+    if sr.scheme == "azure":
+        from azure.identity import DefaultAzureCredential
+        from azure.storage.blob import BlobServiceClient
+
+        # THIS IS AN EXAMPLE - use your own method to supply the storage account
+        storage_account = os.environ.get("IAI_AZURE_BLOB_STORAGE_ACCOUNT")
+        account_url = f"https://{storage_account}.blob.core.windows.net"
+        if not storage_account:
+            raise Exception(
+                "Unable to use azure blob storage without providing IAI_AZURE_BLOB_STORAGE_ACCOUNT env var."
+            )
+        out = {"client": BlobServiceClient(account_url=account_url, credential=DefaultAzureCredential())}
+    return out
+
 
 
 class TaggerDataset(IaiBaseDataset):
@@ -19,12 +40,15 @@ class TaggerDataset(IaiBaseDataset):
             "V": 2,
             "PAD": 3,
         }  # Assign each tag with a unique index
-        self.to_ix = json.load(open(path + "/tokenizer_dict.json", "r"))
+        dict_path = path + "/tokenizer_dict.json"
+        with smart_open.open(dict_path, "r", transport_params=_smart_open_transport_params(dict_path)) as f:
+            self.to_ix = json.load(f)
         self.max_len = max_len
 
         self.x = []
         self.y = []
-        with open(path + "/data.csv") as f:
+        data_path = path + "/data.csv"
+        with smart_open.open(data_path, "r", transport_params=_smart_open_transport_params(data_path)) as f:
             for line in f.readlines():
                 x, y = self.prepare_sequence(*line.strip().split(","))
                 self.x.append(x)
